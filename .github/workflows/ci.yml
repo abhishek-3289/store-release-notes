@@ -1,0 +1,111 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Syntax check
+        run: |
+          for file in src/*.js tests/*.js; do
+            node --check "$file"
+          done
+
+      - name: actionlint
+        run: |
+          bash <(curl -sSfL https://raw.githubusercontent.com/rhysd/actionlint/v1.7.12/scripts/download-actionlint.bash) 1.7.12
+          ./actionlint -color .github/workflows/*.yml examples/*.yml
+
+  unit-tests:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Run tests
+        run: npm test
+
+  integration:
+    name: Integration (notes for this repository)
+    needs: unit-tests
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+      issues: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Pick start ref
+        id: range
+        run: |
+          FROM=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || git rev-list --max-parents=0 HEAD | tail -n 1)
+          echo "Using from-tag $FROM"
+          echo "from=$FROM" >> "$GITHUB_OUTPUT"
+
+      - name: Run action
+        id: notes
+        uses: ./
+        with:
+          from-tag: ${{ steps.range.outputs.from }}
+          max-prs: 20
+          exclude-labels: ''
+          sections: 'enhancement:✨ New,bug:🐛 Fixes'
+          header: 'ci-{version}'
+          version: ${{ github.run_id }}
+          locales: en-US,de-DE
+          play-dir: ${{ runner.temp }}/play
+          play-gpp-dir: ${{ runner.temp }}/gpp
+          appstore-file: ${{ runner.temp }}/appstore/release_notes.txt
+
+      - name: Verify outputs and files
+        env:
+          PLAY_NOTES: ${{ steps.notes.outputs.play-notes }}
+          APPSTORE_NOTES: ${{ steps.notes.outputs.appstore-notes }}
+          PR_COUNT: ${{ steps.notes.outputs.pr-count }}
+          TRUNCATED: ${{ steps.notes.outputs.truncated }}
+          EXPECTED_HEADER: ci-${{ github.run_id }}
+          OUT: ${{ runner.temp }}
+        run: |
+          for file in "$OUT/play/whatsnew-en-US" "$OUT/play/whatsnew-de-DE" "$OUT/gpp/en-US/default.txt" "$OUT/gpp/de-DE/default.txt" "$OUT/appstore/release_notes.txt"; do
+            [[ -f $file ]] || { echo "::error::missing $file"; exit 1; }
+          done
+          [[ $PR_COUNT =~ ^[0-9]+$ ]] || { echo "::error::unexpected pr-count '$PR_COUNT'"; exit 1; }
+          [[ $TRUNCATED == true || $TRUNCATED == false ]] || { echo "::error::unexpected truncated '$TRUNCATED'"; exit 1; }
+          [[ $(head -n 1 <<< "$PLAY_NOTES") == "$EXPECTED_HEADER" ]] || { echo "::error::unexpected first line in play-notes"; exit 1; }
+          [[ $(cat "$OUT/play/whatsnew-en-US") == "$PLAY_NOTES" ]] || { echo "::error::play file differs from play-notes"; exit 1; }
+          [[ $(cat "$OUT/appstore/release_notes.txt") == "$APPSTORE_NOTES" ]] || { echo "::error::appstore file differs from appstore-notes"; exit 1; }
+          LENGTH=$(node -e 'process.stdout.write(String([...require("fs").readFileSync(process.argv[1], "utf8")].length))' "$OUT/play/whatsnew-en-US")
+          (( LENGTH <= 500 )) || { echo "::error::play notes are $LENGTH characters"; exit 1; }
+          echo "pr-count=$PR_COUNT truncated=$TRUNCATED play-length=$LENGTH"

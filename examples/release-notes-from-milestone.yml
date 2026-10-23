@@ -1,0 +1,71 @@
+name: Release to Google Play
+
+on:
+  workflow_dispatch:
+    inputs:
+      increment-type:
+        description: Part of the version being released
+        type: choice
+        options: [patch, minor, major]
+        default: minor
+      track:
+        description: Google Play track
+        type: choice
+        options: [internal, alpha, beta, production]
+        default: internal
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: read
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Find release milestone
+        id: milestone
+        uses: abhishek-3289/milestone-version-increment@v1
+        with:
+          increment-type: ${{ inputs.increment-type }}
+          prefix: v
+
+      - name: Build release notes
+        id: notes
+        uses: abhishek-3289/store-release-notes@v1
+        with:
+          milestone: ${{ steps.milestone.outputs.title }}
+          version: ${{ steps.milestone.outputs.version }}
+          header: v{version}
+          sections: 'feature:✨ New,bug:🐛 Fixes,improvement:⚡ Improvements'
+          locales: en-US,en-GB,de-DE
+          play-dir: distribution/whatsnew
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: zulu
+          java-version: 17
+
+      - name: Build release bundle
+        run: ./gradlew bundleRelease
+
+      - name: Upload to Google Play
+        uses: r0adkll/upload-google-play@v1
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+          packageName: com.example.app
+          releaseFiles: app/build/outputs/bundle/release/app-release.aab
+          track: ${{ inputs.track }}
+          status: completed
+          whatsNewDirectory: distribution/whatsnew
+
+      - name: Summary
+        env:
+          TITLE: ${{ steps.milestone.outputs.title }}
+          PR_COUNT: ${{ steps.notes.outputs.pr-count }}
+          TRUNCATED: ${{ steps.notes.outputs.truncated }}
+        run: echo "Uploaded $TITLE with notes from $PR_COUNT pull requests, truncated=$TRUNCATED" >> "$GITHUB_STEP_SUMMARY"
