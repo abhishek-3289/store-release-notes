@@ -29,7 +29,7 @@ jobs:
 
       - name: Build release notes
         id: notes
-        uses: abhishek-3289/store-release-notes@v1
+        uses: appshipkit/store-release-notes@v1
         with:
           from-tag: ${{ steps.previous.outputs.ref }}
           to-ref: ${{ github.ref_name }}
