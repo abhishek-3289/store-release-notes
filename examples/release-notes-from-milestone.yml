@@ -28,14 +28,14 @@ jobs:
 
       - name: Find release milestone
         id: milestone
-        uses: abhishek-3289/milestone-version-increment@v1
+        uses: appshipkit/milestone-version-increment@v1
         with:
           increment-type: ${{ inputs.increment-type }}
           prefix: v
 
       - name: Build release notes
         id: notes
-        uses: abhishek-3289/store-release-notes@v1
+        uses: appshipkit/store-release-notes@v1
         with:
           milestone: ${{ steps.milestone.outputs.title }}
           version: ${{ steps.milestone.outputs.version }}

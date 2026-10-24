@@ -18,7 +18,7 @@
 
       - name: Build release notes
         id: notes
-        uses: abhishek-3289/store-release-notes@v1
+        uses: appshipkit/store-release-notes@v1
         with:
           milestone: v1.5.0
           version: 1.5.0
@@ -42,7 +42,7 @@
 
 A GitHub Action which builds app-store _What's new_ text from merged pull requests and writes it in the
 formats Google Play and the App Store expect. It pairs with
-[milestone-version-increment](https://github.com/abhishek-3289/milestone-version-increment): that action
+[milestone-version-increment](https://github.com/appshipkit/milestone-version-increment): that action
 creates (or returns) the `v1.5.0` milestone, pull requests are added to it during the cycle, and this action
 turns them into store notes when you ship.
 
